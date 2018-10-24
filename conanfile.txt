@@ -1,0 +1,5 @@
+[requires]
+Timer/1.0@jfrog/stable
+
+[generators]
+compiler_args

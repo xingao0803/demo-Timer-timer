@@ -4,8 +4,11 @@ def artifactory_server = 'demo-arti'
 // Conan repository in Artifactory server
 def artifactory_repo = 'demo-conan-local'
 
-// Binary repository in Artifactory server
-def binary_repo = 'demo-cpp-local'
+// Binary dev repository in Artifactory server
+def dev_repo = 'conanapp-dev-local'
+
+// Binary release repository in Artifactory server
+def release_repo = 'conanapp-release-local'
 
 // User/Pass for Artifactory server
 def user_name = 'admin'
@@ -20,6 +23,8 @@ node {
     def client
     def serverName
     def buildInfo
+    def settings
+    def test
 
     stage("Get project"){
         // Clone source code from github:
@@ -54,31 +59,50 @@ node {
         }
     }
 
-    stage("Build project"){
+    stage("Get settings"){
+        dir ('build') {
+            settings = "build.name=${buildInfo.name};build.number=${buildInfo.number}"
+            def add_props = 0
+            def file = readFile "conaninfo.txt"
+            def lines = file.split('\n')
+            for ( line in lines) {
+                if ( add_props == 0 ) {
+                    if ( line.contains("[full_settings]") ) {
+                        add_props = 1
+                    }
+                } 
+                else {
+                    if ( add_props == 1 ) {
+                        print line
+                        if ( line.contains("=") ) {
+                            settings = settings.concat(";").concat(line.trim())
+                        }
+                        else {
+                            add_props = 0    
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    stage("Build binary app"){
         dir ('build') {
             // Build with g++
             sh "g++ ../*.cpp @conanbuildinfo.args -o newTimer"
-
         }
     }
     
-    stage("Run project"){
-        dir ('build') {
-            // Build with g++
-            sh "./newTimer"
-        }
-    }
-    
-    stage("Upload binary"){
+    stage("Upload binary app"){
         dir ('build') {
             // Upload binary app with settings to artifactory
-            tartgetRepo = "${binary_repo}/Timer-timer/${buildInfo.number}/"
+            tartgetRepo = "${dev_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}"
             def uploadSpec = """{
                 "files": [
                     {
                         "pattern": "./newTimer",
                         "target": "${tartgetRepo}",
-                        "props": "arch=x86_64;arch_build=x86_64;compiler=apple-clang;compiler.libcxx=libc++;compiler.version=9.1;os=Macos;os_build=Macos"
+                        "props": "${settings}"
                     }
                 ]
             }""" 
@@ -87,6 +111,82 @@ node {
             buildInfo.append buildInfo1
             server.publishBuildInfo buildInfo
         }
+    }
+
+    stage("Test"){
+        dir ('build') {
+            sh "./newTimer"
+            echo "Test Completed!"
+            test = true
+        }
+    }
+
+    stage('Bind Metadata') {
+        if (test) {
+            sleep 3
+            sh "curl -X PUT http://demo.jfrogchina.com/artifactory/api/storage/${dev_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}?properties=test=done -u${user_name}:${user_apikey}"
+        } else {
+            echo 'Test NOT finished yet, stop here.'
+            error("Pipeline failed because of test failed")
+        }
+    }
+    
+    stage('Promote') {
+        def promotionConfig = [
+            // Mandatory parameters
+            'buildName'          : buildInfo.name,
+            'buildNumber'        : buildInfo.number,
+            'targetRepo'         : release_repo,
+ 
+            // Optional parameters
+            'comment'            : 'this is the promotion comment',
+            'sourceRepo'         : dev_repo,
+            'status'             : 'Released',
+            'includeDependencies': false,
+            'copy'               : true,
+            // 'failFast' is true by default.
+            // Set it to false, if you don't want the promotion to abort upon receiving the first error.
+            'failFast'           : true
+        ]
+ 
+        // Promote build
+        server.promote promotionConfig
+    }
+
+    stage('Deploy') {
+        sh "mkdir -p deploy"
+        dir ('deploy') {
+            def downloadSpec = """ {
+                "files": [
+                    {
+                        "aql": {
+                            "items.find": {
+                                "repo": "${release_repo}",
+                                "name": {"\$match": "newTimer-${buildInfo.number}"},
+                                "@test":{"\$eq":"done"},
+                                "@arch":{"\$eq":"x86_64"},
+                                "@os":{"\$eq":"Linux"},
+                                "@compiler":{"\$eq":"gcc"}
+                            }
+                        },
+                        "flat": "true"
+                    } 
+                ]
+            } """
+        
+            server.download(downloadSpec)
+            sleep 3
+            sh "chmod +x newTimer-${buildInfo.number}"
+            sh "./newTimer-${buildInfo.number}"
+            echo 'Deploy finished...'
+        }
+    }
+
+    stage("Cleanup"){
+        sh "rm -rf build"
+        sh "rm -rf build@tmp"
+        sh "rm -rf deploy"
+        sh "rm -rf deploy@tmp"
     }
 
 }

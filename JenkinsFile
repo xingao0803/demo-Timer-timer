@@ -12,7 +12,7 @@ def release_repo = 'conanapp-release-local'
 
 // User/Pass for Artifactory server
 def user_name = 'admin'
-def user_apikey = 'APBG9f7okturGUX3EH6LhxhbBmR'
+def user_apikey = '<apikey>'
 
 // Source Code project in github
 def repo_url = 'https://github.com/xingao0803/demo-Timer-timer.git'
@@ -24,7 +24,8 @@ node {
     def serverName
     def buildInfo
     def settings
-    def test
+    def test = false
+    def deploy = false
 
     stage("Get project"){
         // Clone source code from github:
@@ -121,10 +122,10 @@ node {
         }
     }
 
-    stage('Bind Metadata') {
+    stage('Bind Test Metadata') {
         if (test) {
             sleep 3
-            sh "curl -X PUT http://demo.jfrogchina.com/artifactory/api/storage/${dev_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}?properties=test=done -u${user_name}:${user_apikey}"
+            sh "curl -X PUT http://<artifactory-site>/artifactory/api/storage/${dev_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}?properties=test=done -u${user_name}:${user_apikey}"
         } else {
             echo 'Test NOT finished yet, stop here.'
             error("Pipeline failed because of test failed")
@@ -178,7 +179,18 @@ node {
             sleep 3
             sh "chmod +x newTimer-${buildInfo.number}"
             sh "./newTimer-${buildInfo.number}"
-            echo 'Deploy finished...'
+            echo "Deploy Completed!"
+            deploy = true
+        }
+    }
+
+    stage('Bind Deploy Metadata') {
+        if (deploy) {
+            sleep 3
+            sh "curl -X PUT http://<artifactory-site>/artifactory/api/storage/${release_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}?properties=deploy=done -u${user_name}:${user_apikey}"
+        } else {
+            echo 'Deploy NOT finished yet, stop here.'
+            error("Pipeline failed because of deploy failed")
         }
     }
 

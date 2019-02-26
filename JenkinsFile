@@ -128,6 +128,7 @@ node {
             sh "curl -X PUT http://<artifactory-site>/artifactory/api/storage/${dev_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}?properties=test=done -u${user_name}:${user_apikey}"
         } else {
             echo 'Test NOT finished yet, stop here.'
+            sh "curl -X PUT http://<artifactory-site>/artifactory/api/storage/${dev_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}?properties=test=failed -u${user_name}:${user_apikey}"
             error("Pipeline failed because of test failed")
         }
     }
@@ -190,6 +191,7 @@ node {
             sh "curl -X PUT http://<artifactory-site>/artifactory/api/storage/${release_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}?properties=deploy=done -u${user_name}:${user_apikey}"
         } else {
             echo 'Deploy NOT finished yet, stop here.'
+            sh "curl -X PUT http://<artifactory-site>/artifactory/api/storage/${release_repo}/Timer-timer/${buildInfo.number}/newTimer-${buildInfo.number}?properties=deploy=failed -u${user_name}:${user_apikey}"            
             error("Pipeline failed because of deploy failed")
         }
     }
